@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -20,6 +21,14 @@ func main() {
 	port := flag.Int("P", 3306, "MySQL port")
 	flag.Parse()
 
+	// Ensure a database name is provided as the first non-flag argument
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Println("Error: Database name is required.")
+		os.Exit(1)
+	}
+	database := args[0]
+
 	// Validate required parameters
 	if *user == "" {
 		fmt.Println("Error: MySQL username (-u) is required.")
@@ -27,7 +36,7 @@ func main() {
 	}
 
 	// Construct DSN (Data Source Name)
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/", *user, *password, *host, *port)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", *user, *password, *host, *port, database)
 
 	// Open MySQL connection
 	db, err := sql.Open("mysql", dsn)
@@ -40,20 +49,34 @@ func main() {
 	if err := db.Ping(); err != nil {
 		log.Fatalf("Cannot connect to MySQL server: %v", err)
 	}
-	fmt.Println("Connected to MySQL!")
+	fmt.Printf("Connected to MySQL database '%s'!\n", database)
+
+	reader := bufio.NewReader(os.Stdin) // Allows full-line input
 
 	// Query input loop
 	for {
-		fmt.Print("mysql> ")
-		var query string
-		fmt.Scanln(&query)
+		// Generate prompt with HH:MM:SS format
+		currentTime := time.Now().Format("15:04:05")
+		fmt.Printf("micro-mysql (%s)> ", currentTime)
 
-		// Allow multi-word queries
-		if strings.HasPrefix(strings.ToLower(query), "select") {
-			executeQuery(db, query)
-		} else if query == "exit" {
+		// Read user input (full line)
+		query, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("Error reading input:", err)
+			continue
+		}
+
+		query = strings.TrimSpace(query) // Remove newlines and spaces
+
+		// Exit conditions
+		if query == "exit" || query == "quit" || query == "\\q" || query == ":wq" {
 			fmt.Println("Goodbye!")
 			break
+		}
+
+		// Only allow SELECT statements
+		if strings.HasPrefix(strings.ToLower(query), "select") {
+			executeQuery(db, query)
 		} else {
 			fmt.Println("Only SELECT statements are allowed. Type 'exit' to quit.")
 		}
