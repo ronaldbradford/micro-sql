@@ -18,4 +18,4 @@ go mod tidy
 echo "Building the application..."
 go build -o "${BIN}"
 
-echo "Setup complete. Run './${BIN} -u demo -p demopasswd -h localhost -P 3306' to start."
+echo "Setup complete. Run './${BIN} -u demo -p demopasswd -h localhost -P 3306 schema' to start."

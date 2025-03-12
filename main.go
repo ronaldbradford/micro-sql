@@ -84,10 +84,13 @@ func main() {
 }
 
 func executeQuery(db *sql.DB, query string) {
-	start := time.Now()
+	totalStart := time.Now() // Start total execution timer
 
-	// Execute SELECT query
+	// Start query execution timer
+	queryStart := time.Now()
 	rows, err := db.Query(query)
+	queryElapsed := time.Since(queryStart) // End query execution timer
+
 	if err != nil {
 		fmt.Printf("Query Error: %v\n", err)
 		return
@@ -101,20 +104,22 @@ func executeQuery(db *sql.DB, query string) {
 		return
 	}
 
-	// Prepare result storage
-	values := make([]interface{}, len(columns))
-	valuePtrs := make([]interface{}, len(columns))
-
-	for i := range values {
-		valuePtrs[i] = &values[i]
-	}
-
 	// Print column headers
 	fmt.Println(strings.Repeat("-", 50))
 	fmt.Println(strings.Join(columns, "\t"))
 	fmt.Println(strings.Repeat("-", 50))
 
-	// Iterate over rows
+	// Prepare result storage
+	rowCount := 0
+	columnCount := len(columns)
+	values := make([]interface{}, columnCount)
+	valuePtrs := make([]interface{}, columnCount)
+
+	for i := range values {
+		valuePtrs[i] = &values[i]
+	}
+
+	// Iterate over rows, limit display to 10 rows but process all
 	for rows.Next() {
 		err := rows.Scan(valuePtrs...)
 		if err != nil {
@@ -122,19 +127,37 @@ func executeQuery(db *sql.DB, query string) {
 			return
 		}
 
-		// Print row data
-		for _, val := range values {
-			if val != nil {
-				fmt.Printf("%v\t", val)
-			} else {
-				fmt.Print("NULL\t")
+		// Convert byte slices to strings
+		for i, val := range values {
+			if b, ok := val.([]byte); ok {
+				values[i] = string(b) // Convert []byte to string
 			}
 		}
-		fmt.Println()
+
+		// Print only the first 10 rows
+		if rowCount < 10 {
+			for _, val := range values {
+				fmt.Printf("%v\t", val)
+			}
+			fmt.Println()
+		}
+
+		rowCount++
 	}
 
-	// Report execution time
-	elapsed := time.Since(start)
-	fmt.Printf("Query executed in %d µs\n", elapsed.Microseconds())
+	// If more than 10 rows, indicate truncation
+	if rowCount > 10 {
+		fmt.Println("[...] Output truncated at 10 rows.")
+	}
+
+	// Measure total execution time (query + result reading)
+	totalElapsed := time.Since(totalStart)
+
+	// Output query performance data
+	fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
+		rowCount,
+		float64(queryElapsed.Nanoseconds())/1e6,  // Convert to milliseconds
+		float64(totalElapsed.Nanoseconds())/1e6, // Convert to milliseconds
+	)
 	fmt.Println(strings.Repeat("-", 50))
 }
