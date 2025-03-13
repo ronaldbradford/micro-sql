@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e  # Exit on error
 
-BIN="micro-mysql"
+BIN="micro-sql"
 
 # Initialize Go module if not exists
 if [ ! -f "go.mod" ]; then
@@ -17,5 +17,10 @@ go mod tidy
 # Build the application
 echo "Building the application..."
 go build -o "${BIN}"
+#go build -o micro-sql main.go
 
-echo "Setup complete. Run './${BIN} -u demo -p demopasswd -h localhost -P 3306 schema' to start."
+# Create symlinks for MySQL and PostgreSQL modes
+ln -sf ${BIN} micro-mysql
+ln -sf ${BIN} micro-psql
+
+echo "Build complete. Use ./micro-mysql or ./micro-psql."

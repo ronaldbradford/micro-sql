@@ -14,22 +14,33 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
 
 var rowLimit int
 var executionCount int
+var dbType string
 
 func main() {
+	// Detect database type based on the program name
+	progName := strings.ToLower(os.Args[0])
+	switch {
+	case strings.Contains(progName, "psql"):
+		dbType = "postgresql"
+	default:
+		dbType = "mysql" // Default to MySQL
+	}
+
 	// Define command-line flags
-	user := flag.String("u", "", "MySQL username")
-	password := flag.String("p", "", "MySQL password")
-	host := flag.String("h", "127.0.0.1", "MySQL host")
-	port := flag.Int("P", 3306, "MySQL port")
+	user := flag.String("u", "", "Database username")
+	password := flag.String("p", "", "Database password")
+	host := flag.String("h", "127.0.0.1", "Database host")
+	port := flag.Int("P", defaultPort(), "Database port")
 	flag.IntVar(&rowLimit, "l", 10, "Number of rows to display before truncation (default: 10)")
 	flag.IntVar(&executionCount, "c", 1, "Number of times to execute the query (default: 1)")
 	flag.Parse()
 
-	// Ensure a database name is provided as the first non-flag argument
+	// Ensure a database name is provided
 	args := flag.Args()
 	if len(args) < 1 {
 		fmt.Println("Error: Database name is required.")
@@ -39,25 +50,25 @@ func main() {
 
 	// Validate required parameters
 	if *user == "" {
-		fmt.Println("Error: MySQL username (-u) is required.")
+		fmt.Println("Error: Database username (-u) is required.")
 		os.Exit(1)
 	}
 
-	// Construct DSN (Data Source Name)
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", *user, *password, *host, *port, database)
+	// Construct DSN
+	dsn := constructDSN(dbType, *user, *password, *host, *port, database)
 
-	// Open MySQL connection
-	db, err := sql.Open("mysql", dsn)
+	// Open database connection
+	db, err := sql.Open(dbType, dsn)
 	if err != nil {
-		log.Fatalf("Failed to connect to MySQL: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		log.Fatalf("Cannot connect to MySQL server: %v", err)
+		log.Fatalf("Cannot connect to database: %v", err)
 	}
-	fmt.Printf("Connected to MySQL database '%s'!\n", database)
+	fmt.Printf("Connected to %s database '%s'!\n", dbType, database)
 
 	// Handle SIGINT (^C) signals
 	sigChan := make(chan os.Signal, 1)
@@ -73,11 +84,8 @@ func main() {
 
 	// Query input loop
 	for {
-		// Generate prompt with HH:MM:SS format
-		currentTime := time.Now().Format("15:04:05")
-		fmt.Printf("micro-mysql (%s)> ", currentTime)
+		fmt.Printf("micro-%s (%s)> ", dbType, time.Now().Format("15:04:05"))
 
-		// Read user input (full line)
 		query, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error reading input:", err)
@@ -86,24 +94,20 @@ func main() {
 
 		query = strings.TrimSpace(query)
 
-		// Check for exit command
 		if isExitCommand(query) {
 			fmt.Println("Goodbye!")
 			break
 		}
 
-		// Handle `SET MICRO` commands
 		if handleMicroCommand(query) {
 			continue
 		}
 
-		// Handle `HELP` command
 		if strings.EqualFold(query, "HELP") {
 			displayHelp()
 			continue
 		}
 
-		// Only allow SELECT statements
 		if strings.HasPrefix(strings.ToLower(query), "select") {
 			executeQuery(db, query, rowLimit, executionCount)
 		} else {
@@ -112,7 +116,23 @@ func main() {
 	}
 }
 
-// isExitCommand checks if the input matches an exit command (case-insensitive)
+// Default port based on database type
+func defaultPort() int {
+	if strings.Contains(os.Args[0], "psql") {
+		return 5432
+	}
+	return 3306
+}
+
+// Construct DSN for MySQL and PostgreSQL
+func constructDSN(dbType, user, password, host string, port int, database string) string {
+	if dbType == "mysql" {
+		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
+	}
+	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable", user, password, host, port, database)
+}
+
+// Check exit command (case-insensitive, supports multiple ways to exit)
 func isExitCommand(input string) bool {
 	lowerInput := strings.ToLower(strings.TrimSpace(input))
 	exitCommands := []string{"exit", "quit", "\\q", ":wq"}
@@ -125,7 +145,7 @@ func isExitCommand(input string) bool {
 	return false
 }
 
-// handleMicroCommand processes SET MICRO commands
+// Handle SET MICRO commands
 func handleMicroCommand(input string) bool {
 	re := regexp.MustCompile(`\s*=\s*`)
 	input = re.ReplaceAllString(input, " ")
@@ -155,26 +175,27 @@ func handleMicroCommand(input string) bool {
 	return true
 }
 
-// parseInt safely converts a string to an integer
+// Convert string to integer
 func parseInt(s string) (int, error) {
 	var value int
 	_, err := fmt.Sscanf(s, "%d", &value)
 	return value, err
 }
 
-// displayHelp prints available commands
+// Display help
 func displayHelp() {
 	fmt.Println("\nAvailable Commands:")
 	fmt.Println(strings.Repeat("-", 50))
-	fmt.Println("HELP                 - Display this help message")
-	fmt.Println("EXIT, QUIT, \\q, :wq  - Exit the application")
-	fmt.Println("SET MICRO COUNT=N    - Set the execution count for queries")
-	fmt.Println("SET MICRO LIMIT=N    - Set the maximum number of rows displayed")
-	fmt.Println("SELECT ...           - Execute a SELECT query")
+	fmt.Printf("HELP                 - Display this help message\n")
+	fmt.Printf("EXIT                 - Exit the application\n")
+	fmt.Printf("SET MICRO COUNT=N    - Set the execution count for queries (Currently %d)\n", executionCount)
+	fmt.Printf("SET MICRO LIMIT=N    - Set the maximum number of rows displayed (Currently %d)\n", rowLimit)
+	fmt.Printf("SELECT ...           - Execute a SELECT query\n")
 	fmt.Println(strings.Repeat("-", 50))
 }
 
-func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
+// Execute SELECT queries with separate query and response time
+func executeQuery(db *sql.DB, query string, rowLimit, count int) {
 	for i := 0; i < count; i++ {
 		totalStart := time.Now()
 
@@ -195,44 +216,18 @@ func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
 		}
 
 		rowCount := 0
-		columnCount := len(columns)
-		values := make([]interface{}, columnCount)
-		valuePtrs := make([]interface{}, columnCount)
-
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if i == 0 {
-			fmt.Println(strings.Repeat("-", 50))
-			fmt.Println(strings.Join(columns, "\t"))
-			fmt.Println(strings.Repeat("-", 50))
-		}
+		fmt.Println(strings.Repeat("-", 50))
+		fmt.Println(strings.Join(columns, "\t"))
+		fmt.Println(strings.Repeat("-", 50))
 
 		for rows.Next() {
-			err := rows.Scan(valuePtrs...)
-			if err != nil {
-				fmt.Printf("Row scan error: %v\n", err)
-				return
-			}
-
-			for i, val := range values {
-				if b, ok := val.([]byte); ok {
-					values[i] = string(b)
-				}
-			}
-
-			if rowCount < rowLimit && i == 0 {
-				for _, val := range values {
-					fmt.Printf("%v\t", val)
-				}
-				fmt.Println()
-			}
-
 			rowCount++
+			if rowCount <= rowLimit {
+				fmt.Println("[Row data]")
+			}
 		}
 
-		if rowCount > rowLimit && i == 0 {
+		if rowCount > rowLimit {
 			fmt.Printf("[...] Output truncated at %d rows.\n", rowLimit)
 		}
 
