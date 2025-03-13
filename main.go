@@ -19,6 +19,8 @@ func main() {
 	password := flag.String("p", "", "MySQL password")
 	host := flag.String("h", "127.0.0.1", "MySQL host")
 	port := flag.Int("P", 3306, "MySQL port")
+	limit := flag.Int("l", 10, "Number of rows to display before truncation (default: 10)")
+	count := flag.Int("c", 1, "Number of times to execute the query and iterate over results (default: 1)")
 	flag.Parse()
 
 	// Ensure a database name is provided as the first non-flag argument
@@ -76,88 +78,111 @@ func main() {
 
 		// Only allow SELECT statements
 		if strings.HasPrefix(strings.ToLower(query), "select") {
-			executeQuery(db, query)
+			executeQuery(db, query, *limit, *count)
 		} else {
 			fmt.Println("Only SELECT statements are allowed. Type 'exit' to quit.")
 		}
 	}
 }
 
-func executeQuery(db *sql.DB, query string) {
-	totalStart := time.Now() // Start total execution timer
+func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
+	var totalQueryTime time.Duration
+	var totalResultTime time.Duration
+	var totalRows int
 
-	// Start query execution timer
-	queryStart := time.Now()
-	rows, err := db.Query(query)
-	queryElapsed := time.Since(queryStart) // End query execution timer
+	for i := 0; i < count; i++ {
+		totalStart := time.Now() // Start total execution timer
 
-	if err != nil {
-		fmt.Printf("Query Error: %v\n", err)
-		return
-	}
-	defer rows.Close()
+		// Start query execution timer
+		queryStart := time.Now()
+		rows, err := db.Query(query)
+		queryElapsed := time.Since(queryStart) // End query execution timer
 
-	// Get column names
-	columns, err := rows.Columns()
-	if err != nil {
-		fmt.Printf("Error fetching columns: %v\n", err)
-		return
-	}
-
-	// Print column headers
-	fmt.Println(strings.Repeat("-", 50))
-	fmt.Println(strings.Join(columns, "\t"))
-	fmt.Println(strings.Repeat("-", 50))
-
-	// Prepare result storage
-	rowCount := 0
-	columnCount := len(columns)
-	values := make([]interface{}, columnCount)
-	valuePtrs := make([]interface{}, columnCount)
-
-	for i := range values {
-		valuePtrs[i] = &values[i]
-	}
-
-	// Iterate over rows, limit display to 10 rows but process all
-	for rows.Next() {
-		err := rows.Scan(valuePtrs...)
 		if err != nil {
-			fmt.Printf("Row scan error: %v\n", err)
+			fmt.Printf("Query Error: %v\n", err)
+			return
+		}
+		defer rows.Close()
+
+		// Get column names
+		columns, err := rows.Columns()
+		if err != nil {
+			fmt.Printf("Error fetching columns: %v\n", err)
 			return
 		}
 
-		// Convert byte slices to strings
-		for i, val := range values {
-			if b, ok := val.([]byte); ok {
-				values[i] = string(b) // Convert []byte to string
-			}
+		// Prepare result storage
+		rowCount := 0
+		columnCount := len(columns)
+		values := make([]interface{}, columnCount)
+		valuePtrs := make([]interface{}, columnCount)
+
+		for i := range values {
+			valuePtrs[i] = &values[i]
 		}
 
-		// Print only the first 10 rows
-		if rowCount < 10 {
-			for _, val := range values {
-				fmt.Printf("%v\t", val)
-			}
-			fmt.Println()
+		// Print column headers only on the first execution
+		if i == 0 {
+			fmt.Println(strings.Repeat("-", 50))
+			fmt.Println(strings.Join(columns, "\t"))
+			fmt.Println(strings.Repeat("-", 50))
 		}
 
-		rowCount++
+		// Iterate over rows, limit display to `rowLimit` but process all
+		for rows.Next() {
+			err := rows.Scan(valuePtrs...)
+			if err != nil {
+				fmt.Printf("Row scan error: %v\n", err)
+				return
+			}
+
+			// Convert byte slices to strings
+			for i, val := range values {
+				if b, ok := val.([]byte); ok {
+					values[i] = string(b) // Convert []byte to string
+				}
+			}
+
+			// Print only up to `rowLimit` rows on the first execution
+			if rowCount < rowLimit && i == 0 {
+				for _, val := range values {
+					fmt.Printf("%v\t", val)
+				}
+				fmt.Println()
+			}
+
+			rowCount++
+		}
+
+		// If more than `rowLimit` rows and first execution, indicate truncation
+		if rowCount > rowLimit && i == 0 {
+			fmt.Printf("[...] Output truncated at %d rows.\n", rowLimit)
+		}
+
+		// Measure total execution time (query + result reading)
+		totalElapsed := time.Since(totalStart)
+
+		// Accumulate times
+		totalQueryTime += queryElapsed
+		totalResultTime += totalElapsed
+		totalRows = rowCount
+
+		// Print execution result
+		fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
+			rowCount,
+			float64(queryElapsed.Nanoseconds())/1e6,  // Convert to milliseconds
+			float64(totalElapsed.Nanoseconds())/1e6, // Convert to milliseconds
+		)
 	}
 
-	// If more than 10 rows, indicate truncation
-	if rowCount > 10 {
-		fmt.Println("[...] Output truncated at 10 rows.")
+	// Print average only if count > 1
+	if count > 1 {
+		fmt.Printf("Average: %d rows (%.6f ms query, %.6f ms result over %d runs)\n",
+			totalRows,
+			float64(totalQueryTime.Nanoseconds())/1e6/float64(count),  // Average query execution time
+			float64(totalResultTime.Nanoseconds())/1e6/float64(count), // Average total execution time
+			count,
+		)
 	}
-
-	// Measure total execution time (query + result reading)
-	totalElapsed := time.Since(totalStart)
-
-	// Output query performance data
-	fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
-		rowCount,
-		float64(queryElapsed.Nanoseconds())/1e6,  // Convert to milliseconds
-		float64(totalElapsed.Nanoseconds())/1e6, // Convert to milliseconds
-	)
 	fmt.Println(strings.Repeat("-", 50))
 }
