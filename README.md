@@ -12,7 +12,7 @@ Query response can be so fast that using conventional client tools including `my
 
 Enter **micro-mysql/micro-psql**. A lightweight wrapper written in Go designed to report execution times with higher precision.
 
-It also has a few simple features
+It also has a few simple features:
 * Same interface to run in MySQL or PostgreSQL
 * Execute the same query N times, with average execution times.
 * Separate query execution and result set processing times.
@@ -24,41 +24,61 @@ It also has a few simple features
 Here is a trival example running with the query cached in Readyset executing in <1ms.
 
 ```
-$ ./micro-mysql -u readyset -p -h db -c 5 -l 6 -P 3342 imdb
+$ bin/micro-mysql -u readyset -p -h db -P 3342 imdb
 Connected to mysql database 'imdb'!
-micro-mysql (15:14:06)> SELECT count(*) FROM `imdb`.`title`;
+micro-mysql (18:06:16)> select count(*) from imdb.title;
 --------------------------------------------------
 count(*)
 --------------------------------------------------
 11131061
-1 rows (1.208625 ms query, 1.288125 ms result)
-1 rows (0.853042 ms query, 0.855917 ms result)
-1 rows (0.754125 ms query, 0.763833 ms result)
-1 rows (0.731625 ms query, 0.736250 ms result)
-1 rows (0.767417 ms query, 0.769750 ms result)
-Average: 1 rows (0.862967 ms query, 0.882775 ms result over 5 runs)
+1 rows (0.717209 ms query, 0.756958 ms result)
+1 rows (0.330333 ms query, 0.349875 ms result)
+1 rows (0.529708 ms query, 0.552375 ms result)
+Average: 1 rows (0.525750 ms query, 0.553069 ms result over 3 runs)
 --------------------------------------------------
 ```
 
 ### Without Caching
 
-With MySQL, even with the table cached in the InnoDB Buffer Pool, execution is consistently 700+ms.
+With MySQL, even with the table cached in the InnoDB Buffer Pool, execution is consistently 600+ms.
 
 ```
-./micro-mysql -u rbradfor -p -h db -c 5 -l 6 imdb
+bin/micro-mysql -u demouser -p -h db imdb
 Connected to mysql database 'imdb'!
-micro-mysql (15:14:18)> SELECT count(*) FROM `imdb`.`title`;
+micro-mysql (18:04:59)> select count(*) from imdb.title;
 --------------------------------------------------
 count(*)
 --------------------------------------------------
 11131061
-1 rows (616.140958 ms query, 616.264500 ms result)
-1 rows (611.821541 ms query, 611.838417 ms result)
-1 rows (612.376583 ms query, 612.392625 ms result)
-1 rows (610.311292 ms query, 610.328750 ms result)
-1 rows (617.082791 ms query, 617.100125 ms result)
-Average: 1 rows (613.546633 ms query, 613.584883 ms result over 5 runs)
+1 rows (683.124500 ms query, 683.229583 ms result)
+1 rows (678.220458 ms query, 678.242208 ms result)
+1 rows (680.034666 ms query, 680.281833 ms result)
+Average: 1 rows (680.459875 ms query, 680.584541 ms result over 3 runs)
 --------------------------------------------------
+```
+
+### Large Resultset
+
+```
+micro-mysql (18:06:20)> select * from name;
+--------------------------------------------------
+name_id	nconst	name	born	died	updated
+--------------------------------------------------
+1	nm0000001	Unknown	1899	1987	2025-03-07 22:13:18
+2	nm0000002	Unknown	1924	2014	2025-03-07 22:13:18
+3	nm0000003	Unknown	1934	<nil>	2025-03-07 22:13:18
+4	nm0000004	Unknown	1949	1982	2025-03-07 22:13:18
+5	nm0000005	Unknown	1918	2007	2025-03-07 22:13:18
+6	nm0000006	Unknown	1915	1982	2025-03-07 22:13:18
+7	nm0000007	Unknown	1899	1957	2025-03-07 22:13:18
+8	nm0000008	Unknown	1924	2004	2025-03-07 22:13:18
+9	nm0000009	Unknown	1925	1984	2025-03-07 22:13:18
+10	nm0000010	Unknown	1899	1986	2025-03-07 22:13:18
+[...] Output truncated at 10 rows.
+14235647 rows (48.136459 ms query, 8389.778333 ms result)
+14235647 rows (2.719959 ms query, 8359.327791 ms result)
+14235647 rows (2.562458 ms query, 8319.964875 ms result)
+Average: 14235647 rows (17.806292 ms query, 8356.357000 ms result over 3 runs)
 ```
 
 ## Command-line Options
