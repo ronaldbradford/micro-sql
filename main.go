@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 )
@@ -25,17 +27,40 @@ func main() {
 	// Detect database type based on the program name
 	progName := strings.ToLower(os.Args[0])
 	switch {
-	case strings.Contains(progName, "psql"):
+	case strings.HasSuffix(progName, "psql"):
 		dbType = "postgresql"
+	case strings.HasSuffix(progName, "mysql"):
+		dbType = "mysql"
 	default:
-		dbType = "mysql" // Default to MySQL
+		fmt.Println("Error: Please use `micro-mysql` or `micro-psql` to run this program.")
+		os.Exit(1)
 	}
 
-	// Define command-line flags
-	user := flag.String("u", "", "Database username")
-	password := flag.String("p", "", "Database password")
-	host := flag.String("h", "127.0.0.1", "Database host")
-	port := flag.Int("P", defaultPort(), "Database port")
+	// Parse command-line flags
+	user, password, host, port, database := parseFlags()
+
+	// Prompt for password if not provided
+	if password == "" {
+		password = promptForPassword()
+	}
+
+	// Connect to database
+	db := connectToDatabase(user, password, host, port, database)
+	defer db.Close()
+
+	// Handle SIGINT (^C)
+	handleSigint(db)
+
+	// Start the user input loop
+	handleUserInput(db)
+}
+
+// Parse command-line flags and return values
+func parseFlags() (user, password, host string, port int, database string) {
+	userFlag := flag.String("u", "", "Database username")
+	passwordFlag := flag.String("p", "", "Database password (optional, will prompt if not provided)")
+	hostFlag := flag.String("h", "127.0.0.1", "Database host")
+	portFlag := flag.Int("P", defaultPort(), "Database port")
 	flag.IntVar(&rowLimit, "l", 10, "Number of rows to display before truncation (default: 10)")
 	flag.IntVar(&executionCount, "c", 1, "Number of times to execute the query (default: 1)")
 	flag.Parse()
@@ -46,23 +71,29 @@ func main() {
 		fmt.Println("Error: Database name is required.")
 		os.Exit(1)
 	}
-	database := args[0]
 
-	// Validate required parameters
-	if *user == "" {
-		fmt.Println("Error: Database username (-u) is required.")
+	return *userFlag, *passwordFlag, *hostFlag, *portFlag, args[0]
+}
+
+// Prompt for password securely without displaying input
+func promptForPassword() string {
+	fmt.Print("Enter password: ")
+	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println() // Move to a new line after password input
+	if err != nil {
+		fmt.Println("Error reading password.")
 		os.Exit(1)
 	}
+	return string(bytePassword)
+}
 
-	// Construct DSN
-	dsn := constructDSN(dbType, *user, *password, *host, *port, database)
-
-	// Open database connection
+// Connect to the database and return the connection
+func connectToDatabase(user, password, host string, port int, database string) *sql.DB {
+	dsn := constructDSN(dbType, user, password, host, port, database)
 	db, err := sql.Open(dbType, dsn)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
@@ -70,7 +101,11 @@ func main() {
 	}
 	fmt.Printf("Connected to %s database '%s'!\n", dbType, database)
 
-	// Handle SIGINT (^C) signals
+	return db
+}
+
+// Handle SIGINT (^C) and clean up database connection
+func handleSigint(db *sql.DB) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -79,10 +114,12 @@ func main() {
 		db.Close()
 		os.Exit(0)
 	}()
+}
 
+// Handle user input loop
+func handleUserInput(db *sql.DB) {
 	reader := bufio.NewReader(os.Stdin)
 
-	// Query input loop
 	for {
 		fmt.Printf("micro-%s (%s)> ", dbType, time.Now().Format("15:04:05"))
 
@@ -116,9 +153,111 @@ func main() {
 	}
 }
 
+// Execute SELECT queries
+func executeQuery(db *sql.DB, query string, rowLimit, count int) {
+	var totalQueryTime, totalResultTime time.Duration
+	var totalRows int
+
+	for i := 0; i < count; i++ {
+		totalStart := time.Now()
+
+		// Start query execution timer
+		queryStart := time.Now()
+		rows, err := db.Query(query)
+		queryElapsed := time.Since(queryStart)
+
+		if err != nil {
+			fmt.Printf("Query Error: %v\n", err)
+			return
+		}
+		defer rows.Close()
+
+		// Get column names
+		columns, err := rows.Columns()
+		if err != nil {
+			fmt.Printf("Error fetching columns: %v\n", err)
+			return
+		}
+
+		// Prepare result storage
+		columnCount := len(columns)
+		values := make([]interface{}, columnCount)
+		valuePtrs := make([]interface{}, columnCount)
+		for j := range values {
+			valuePtrs[j] = &values[j]
+		}
+
+		rowCount := 0
+
+		// Print column headers only on the first execution
+		if i == 0 {
+			fmt.Println(strings.Repeat("-", 50))
+			fmt.Println(strings.Join(columns, "\t"))
+			fmt.Println(strings.Repeat("-", 50))
+		}
+
+		// Iterate over rows, limit display to `rowLimit` but process all
+		for rows.Next() {
+			err := rows.Scan(valuePtrs...)
+			if err != nil {
+				fmt.Printf("Row scan error: %v\n", err)
+				return
+			}
+
+			// Convert []byte to string for readable output
+			for j, val := range values {
+				if b, ok := val.([]byte); ok {
+					values[j] = string(b)
+				}
+			}
+
+			// Print actual row data only in the first iteration and up to `rowLimit`
+			if i == 0 && rowCount < rowLimit {
+				for _, val := range values {
+					fmt.Printf("%v\t", val)
+				}
+				fmt.Println()
+			}
+
+			rowCount++
+		}
+
+		// If more than `rowLimit` rows, indicate truncation (only in first iteration)
+		if i == 0 && rowCount > rowLimit {
+			fmt.Printf("[...] Output truncated at %d rows.\n", rowLimit)
+		}
+
+		// Measure total execution time (query + result reading)
+		totalElapsed := time.Since(totalStart)
+
+		// Accumulate times
+		totalQueryTime += queryElapsed
+		totalResultTime += totalElapsed
+		totalRows = rowCount
+
+		// Show query performance details
+		fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
+			rowCount,
+			float64(queryElapsed.Nanoseconds())/1e6,
+			float64(totalElapsed.Nanoseconds())/1e6,
+		)
+	}
+
+	// Print average only if count > 1
+	if count > 1 {
+		fmt.Printf("Average: %d rows (%.6f ms query, %.6f ms result over %d runs)\n",
+			totalRows,
+			float64(totalQueryTime.Nanoseconds())/1e6/float64(count),  // Average query execution time
+			float64(totalResultTime.Nanoseconds())/1e6/float64(count), // Average total execution time
+			count,
+		)
+	}
+	fmt.Println(strings.Repeat("-", 50))
+}
+
 // Default port based on database type
 func defaultPort() int {
-	if strings.Contains(os.Args[0], "psql") {
+	if dbType == "postgresql" {
 		return 5432
 	}
 	return 3306
@@ -145,7 +284,18 @@ func isExitCommand(input string) bool {
 	return false
 }
 
-// Handle SET MICRO commands
+// Display help
+func displayHelp() {
+	fmt.Println("\nAvailable Commands:")
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Printf("HELP                 - Display this help message\n")
+	fmt.Printf("EXIT                 - Exit the application\n")
+	fmt.Printf("SET MICRO COUNT=N    - Set the execution count for queries (Currently %d)\n", executionCount)
+	fmt.Printf("SET MICRO LIMIT=N    - Set the maximum number of rows displayed (Currently %d)\n", rowLimit)
+	fmt.Printf("SELECT ...           - Execute a SELECT query\n")
+	fmt.Println(strings.Repeat("-", 50))
+}
+
 func handleMicroCommand(input string) bool {
 	re := regexp.MustCompile(`\s*=\s*`)
 	input = re.ReplaceAllString(input, " ")
@@ -180,63 +330,4 @@ func parseInt(s string) (int, error) {
 	var value int
 	_, err := fmt.Sscanf(s, "%d", &value)
 	return value, err
-}
-
-// Display help
-func displayHelp() {
-	fmt.Println("\nAvailable Commands:")
-	fmt.Println(strings.Repeat("-", 50))
-	fmt.Printf("HELP                 - Display this help message\n")
-	fmt.Printf("EXIT                 - Exit the application\n")
-	fmt.Printf("SET MICRO COUNT=N    - Set the execution count for queries (Currently %d)\n", executionCount)
-	fmt.Printf("SET MICRO LIMIT=N    - Set the maximum number of rows displayed (Currently %d)\n", rowLimit)
-	fmt.Printf("SELECT ...           - Execute a SELECT query\n")
-	fmt.Println(strings.Repeat("-", 50))
-}
-
-// Execute SELECT queries with separate query and response time
-func executeQuery(db *sql.DB, query string, rowLimit, count int) {
-	for i := 0; i < count; i++ {
-		totalStart := time.Now()
-
-		queryStart := time.Now()
-		rows, err := db.Query(query)
-		queryElapsed := time.Since(queryStart)
-
-		if err != nil {
-			fmt.Printf("Query Error: %v\n", err)
-			return
-		}
-		defer rows.Close()
-
-		columns, err := rows.Columns()
-		if err != nil {
-			fmt.Printf("Error fetching columns: %v\n", err)
-			return
-		}
-
-		rowCount := 0
-		fmt.Println(strings.Repeat("-", 50))
-		fmt.Println(strings.Join(columns, "\t"))
-		fmt.Println(strings.Repeat("-", 50))
-
-		for rows.Next() {
-			rowCount++
-			if rowCount <= rowLimit {
-				fmt.Println("[Row data]")
-			}
-		}
-
-		if rowCount > rowLimit {
-			fmt.Printf("[...] Output truncated at %d rows.\n", rowLimit)
-		}
-
-		totalElapsed := time.Since(totalStart)
-
-		fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
-			rowCount,
-			float64(queryElapsed.Nanoseconds())/1e6,
-			float64(totalElapsed.Nanoseconds())/1e6,
-		)
-	}
 }
