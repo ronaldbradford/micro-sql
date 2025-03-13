@@ -1,0 +1,9 @@
+# Ignore bin files
+bin/
+micro-sql
+micro-mysql
+micro-psql
+
+# Ignore temporary files
+*.log
+*.tmp
