@@ -1,4 +1,4 @@
-module micro-mysql
+module github.com/ronaldbradford/micro-sql
 
 go 1.23.0
 
