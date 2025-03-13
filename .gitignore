@@ -1,6 +1,5 @@
 # Ignore bin files
 bin/
-micro-sql
 micro-mysql
 micro-psql
 
