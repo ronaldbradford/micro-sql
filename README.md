@@ -61,15 +61,15 @@ Average: 1 rows (613.546633 ms query, 613.584883 ms result over 5 runs)
 --------------------------------------------------
 ```
 
-## options
+## Command-line Options
 
-- -u <user>
-- -p <password>
-- -h <host>
-- -P <port> *Optional*
-- -c <count> times to execute query
-- -l <limit> resultset displayed
-- <dbname>
+- -u \<user>
+- -p \<password>
+- -h \<host>
+- -P \<port> *Optional*
+- -c \<count> times to execute query
+- -l \<limit> resultset displayed
+- \<dbname>
 
 ## Commands
 
@@ -79,4 +79,4 @@ Average: 1 rows (613.546633 ms query, 613.584883 ms result over 5 runs)
 - SET MICRO LIMIT=N
 - SELECT 
 
-The command does no parsing of SQL statements, it simple executes the SELECT statement, and reads the resultset.
+The program does no parsing of SQL statements, it simple executes the SELECT statement, and reads the result set.
