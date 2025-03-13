@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -53,6 +55,16 @@ func main() {
 	}
 	fmt.Printf("Connected to MySQL database '%s'!\n", database)
 
+	// Handle SIGINT (^C) signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\nReceived SIGINT, exiting...")
+		db.Close()
+		os.Exit(0)
+	}()
+
 	reader := bufio.NewReader(os.Stdin) // Allows full-line input
 
 	// Query input loop
@@ -68,10 +80,10 @@ func main() {
 			continue
 		}
 
-		query = strings.TrimSpace(query) // Remove newlines and spaces
+		query = strings.TrimSpace(query) // Preserve case for execution
 
-		// Exit conditions
-		if query == "exit" || query == "quit" || query == "\\q" || query == ":wq" {
+		// Exit conditions (case-insensitive check)
+		if isExitCommand(query) {
 			fmt.Println("Goodbye!")
 			break
 		}
@@ -83,6 +95,19 @@ func main() {
 			fmt.Println("Only SELECT statements are allowed. Type 'exit' to quit.")
 		}
 	}
+}
+
+// isExitCommand checks if the input matches an exit command (case-insensitive)
+func isExitCommand(input string) bool {
+	lowerInput := strings.ToLower(strings.TrimSpace(input))
+	exitCommands := []string{"exit", "quit", "\\q", ":wq"}
+
+	for _, cmd := range exitCommands {
+		if lowerInput == cmd {
+			return true
+		}
+	}
+	return false
 }
 
 func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
