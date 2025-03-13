@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -15,14 +16,17 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
+var rowLimit int
+var executionCount int
+
 func main() {
 	// Define command-line flags
 	user := flag.String("u", "", "MySQL username")
 	password := flag.String("p", "", "MySQL password")
 	host := flag.String("h", "127.0.0.1", "MySQL host")
 	port := flag.Int("P", 3306, "MySQL port")
-	limit := flag.Int("l", 10, "Number of rows to display before truncation (default: 10)")
-	count := flag.Int("c", 1, "Number of times to execute the query and iterate over results (default: 1)")
+	flag.IntVar(&rowLimit, "l", 10, "Number of rows to display before truncation (default: 10)")
+	flag.IntVar(&executionCount, "c", 1, "Number of times to execute the query (default: 1)")
 	flag.Parse()
 
 	// Ensure a database name is provided as the first non-flag argument
@@ -65,7 +69,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	reader := bufio.NewReader(os.Stdin) // Allows full-line input
+	reader := bufio.NewReader(os.Stdin)
 
 	// Query input loop
 	for {
@@ -80,19 +84,30 @@ func main() {
 			continue
 		}
 
-		query = strings.TrimSpace(query) // Preserve case for execution
+		query = strings.TrimSpace(query)
 
-		// Exit conditions (case-insensitive check)
+		// Check for exit command
 		if isExitCommand(query) {
 			fmt.Println("Goodbye!")
 			break
 		}
 
+		// Handle `SET MICRO` commands
+		if handleMicroCommand(query) {
+			continue
+		}
+
+		// Handle `HELP` command
+		if strings.EqualFold(query, "HELP") {
+			displayHelp()
+			continue
+		}
+
 		// Only allow SELECT statements
 		if strings.HasPrefix(strings.ToLower(query), "select") {
-			executeQuery(db, query, *limit, *count)
+			executeQuery(db, query, rowLimit, executionCount)
 		} else {
-			fmt.Println("Only SELECT statements are allowed. Type 'exit' to quit.")
+			fmt.Println("Only SELECT statements are allowed. Type 'HELP' for available commands.")
 		}
 	}
 }
@@ -110,18 +125,62 @@ func isExitCommand(input string) bool {
 	return false
 }
 
+// handleMicroCommand processes SET MICRO commands
+func handleMicroCommand(input string) bool {
+	re := regexp.MustCompile(`\s*=\s*`)
+	input = re.ReplaceAllString(input, " ")
+	words := strings.Fields(strings.ToUpper(input))
+
+	if len(words) != 4 || words[0] != "SET" || words[1] != "MICRO" {
+		return false
+	}
+
+	value, err := parseInt(words[3])
+	if err != nil || value < 1 {
+		fmt.Println("Invalid value. Must be a positive integer.")
+		return true
+	}
+
+	switch words[2] {
+	case "COUNT":
+		executionCount = value
+		fmt.Printf("Execution count set to %d\n", executionCount)
+	case "LIMIT":
+		rowLimit = value
+		fmt.Printf("Row limit set to %d\n", rowLimit)
+	default:
+		return false
+	}
+
+	return true
+}
+
+// parseInt safely converts a string to an integer
+func parseInt(s string) (int, error) {
+	var value int
+	_, err := fmt.Sscanf(s, "%d", &value)
+	return value, err
+}
+
+// displayHelp prints available commands
+func displayHelp() {
+	fmt.Println("\nAvailable Commands:")
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Println("HELP                 - Display this help message")
+	fmt.Println("EXIT, QUIT, \\q, :wq  - Exit the application")
+	fmt.Println("SET MICRO COUNT=N    - Set the execution count for queries")
+	fmt.Println("SET MICRO LIMIT=N    - Set the maximum number of rows displayed")
+	fmt.Println("SELECT ...           - Execute a SELECT query")
+	fmt.Println(strings.Repeat("-", 50))
+}
+
 func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
-	var totalQueryTime time.Duration
-	var totalResultTime time.Duration
-	var totalRows int
-
 	for i := 0; i < count; i++ {
-		totalStart := time.Now() // Start total execution timer
+		totalStart := time.Now()
 
-		// Start query execution timer
 		queryStart := time.Now()
 		rows, err := db.Query(query)
-		queryElapsed := time.Since(queryStart) // End query execution timer
+		queryElapsed := time.Since(queryStart)
 
 		if err != nil {
 			fmt.Printf("Query Error: %v\n", err)
@@ -129,14 +188,12 @@ func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
 		}
 		defer rows.Close()
 
-		// Get column names
 		columns, err := rows.Columns()
 		if err != nil {
 			fmt.Printf("Error fetching columns: %v\n", err)
 			return
 		}
 
-		// Prepare result storage
 		rowCount := 0
 		columnCount := len(columns)
 		values := make([]interface{}, columnCount)
@@ -146,14 +203,12 @@ func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
 			valuePtrs[i] = &values[i]
 		}
 
-		// Print column headers only on the first execution
 		if i == 0 {
 			fmt.Println(strings.Repeat("-", 50))
 			fmt.Println(strings.Join(columns, "\t"))
 			fmt.Println(strings.Repeat("-", 50))
 		}
 
-		// Iterate over rows, limit display to `rowLimit` but process all
 		for rows.Next() {
 			err := rows.Scan(valuePtrs...)
 			if err != nil {
@@ -161,14 +216,12 @@ func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
 				return
 			}
 
-			// Convert byte slices to strings
 			for i, val := range values {
 				if b, ok := val.([]byte); ok {
-					values[i] = string(b) // Convert []byte to string
+					values[i] = string(b)
 				}
 			}
 
-			// Print only up to `rowLimit` rows on the first execution
 			if rowCount < rowLimit && i == 0 {
 				for _, val := range values {
 					fmt.Printf("%v\t", val)
@@ -179,35 +232,16 @@ func executeQuery(db *sql.DB, query string, rowLimit int, count int) {
 			rowCount++
 		}
 
-		// If more than `rowLimit` rows and first execution, indicate truncation
 		if rowCount > rowLimit && i == 0 {
 			fmt.Printf("[...] Output truncated at %d rows.\n", rowLimit)
 		}
 
-		// Measure total execution time (query + result reading)
 		totalElapsed := time.Since(totalStart)
 
-		// Accumulate times
-		totalQueryTime += queryElapsed
-		totalResultTime += totalElapsed
-		totalRows = rowCount
-
-		// Print execution result
 		fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
 			rowCount,
-			float64(queryElapsed.Nanoseconds())/1e6,  // Convert to milliseconds
-			float64(totalElapsed.Nanoseconds())/1e6, // Convert to milliseconds
+			float64(queryElapsed.Nanoseconds())/1e6,
+			float64(totalElapsed.Nanoseconds())/1e6,
 		)
 	}
-
-	// Print average only if count > 1
-	if count > 1 {
-		fmt.Printf("Average: %d rows (%.6f ms query, %.6f ms result over %d runs)\n",
-			totalRows,
-			float64(totalQueryTime.Nanoseconds())/1e6/float64(count),  // Average query execution time
-			float64(totalResultTime.Nanoseconds())/1e6/float64(count), // Average total execution time
-			count,
-		)
-	}
-	fmt.Println(strings.Repeat("-", 50))
 }
