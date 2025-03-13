@@ -20,7 +20,7 @@ echo "Building the application..."
 go build -o "${BASE_DIR}/bin/${BIN}" "${BASE_DIR}/cmd"
 
 # Create symlinks for MySQL and PostgreSQL modes
-ln -sf bin/${BIN} "${BASE_DIR}/bin/micro-mysql"
-ln -sf bin/${BIN} "${BASE_DIR}/bin/micro-psql"
+ln -sf ${BIN} "${BASE_DIR}/bin/micro-mysql"
+ln -sf ${BIN} "${BASE_DIR}/bin/micro-psql"
 
 echo "Build complete. Use ./bin/micro-mysql or ./bin/micro-psql."
