@@ -1,26 +1,26 @@
 #!/bin/bash
 set -e  # Exit on error
 
-BIN="micro-sql"
+readonly BIN="micro-sql"
+
+BASE_DIR=$(dirname "$0")
+mkdir -p "${BASE_DIR}/bin"
 
 # Initialize Go module if not exists
 if [ ! -f "go.mod" ]; then
     echo "Initializing Go module..."
-    go mod init "${BIN}"
+    go mod init "github.com/ronaldbradford/${BIN}"
 fi
 
-# Install dependencies
 echo "Installing dependencies..."
-go get -u github.com/go-sql-driver/mysql
 go mod tidy
 
 # Build the application
 echo "Building the application..."
-go build -o "${BIN}"
-#go build -o micro-sql main.go
+go build -o "${BASE_DIR}/bin/${BIN}" "${BASE_DIR}/cmd"
 
 # Create symlinks for MySQL and PostgreSQL modes
-ln -sf ${BIN} micro-mysql
-ln -sf ${BIN} micro-psql
+ln -sf bin/${BIN} "${BASE_DIR}/bin/micro-mysql"
+ln -sf bin/${BIN} "${BASE_DIR}/bin/micro-psql"
 
-echo "Build complete. Use ./micro-mysql or ./micro-psql."
+echo "Build complete. Use ./bin/micro-mysql or ./bin/micro-psql."
