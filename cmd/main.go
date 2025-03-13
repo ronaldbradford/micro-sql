@@ -62,7 +62,7 @@ func parseFlags() (user, password, host string, port int, database string) {
 	hostFlag := flag.String("h", "127.0.0.1", "Database host")
 	portFlag := flag.Int("P", defaultPort(), "Database port")
 	flag.IntVar(&rowLimit, "l", 10, "Number of rows to display before truncation (default: 10)")
-	flag.IntVar(&executionCount, "c", 1, "Number of times to execute the query (default: 1)")
+	flag.IntVar(&executionCount, "c", 3, "Number of times to execute the query (default: 3)")
 	flag.Parse()
 
 	// Ensure a database name is provided
