@@ -19,12 +19,16 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var rowLimit int
-var executionCount int
-var dbType string
+const (
+  LINE = 60
+)
+
+var rowLimit int                                            // TODO: Refactor as local var
+var executionCount int                                      // TODO: Refactor as local var
 
 func main() {
-	// Detect database type based on the program name
+    var dbType string
+
 	progName := strings.ToLower(os.Args[0])
 	switch {
 	case strings.HasSuffix(progName, "psql"):
@@ -36,23 +40,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse command-line flags
-	user, password, host, port, database := parseFlags()
-
-	// Prompt for password if not provided
-	if password == "" {
+	user, password, host, port, database := parseFlags()    // Parse command-line flags
+	if password == "" {                                     // Prompt for password if not provided
 		password = promptForPassword()
 	}
 
-	// Connect to database
-	db := connectToDatabase(user, password, host, port, database)
+	db := connectToDatabase(dbType, user, password, host, port, database) // Connect to database
 	defer db.Close()
 
-	// Handle SIGINT (^C)
-	handleSigint(db)
-
-	// Start the user input loop
-	handleUserInput(db)
+	handleSigint(db)                                        // Handle SIGINT (^C)
+	handleUserInput(dbType, db)                             // Start the user input loop
 }
 
 // Parse command-line flags and return values
@@ -60,13 +57,12 @@ func parseFlags() (user, password, host string, port int, database string) {
 	userFlag := flag.String("u", "", "Database username")
 	passwordFlag := flag.String("p", "", "Database password (optional, will prompt if not provided)")
 	hostFlag := flag.String("h", "127.0.0.1", "Database host")
-	portFlag := flag.Int("P", defaultPort(), "Database port")
+	portFlag := flag.Int("P", getDefaultPort(""), "Database port")
 	flag.IntVar(&rowLimit, "l", 10, "Number of rows to display before truncation (default: 10)")
 	flag.IntVar(&executionCount, "c", 3, "Number of times to execute the query (default: 3)")
 	flag.Parse()
 
-	// Ensure a database name is provided
-	args := flag.Args()
+	args := flag.Args()                                     // Ensure a database name is provided
 	if len(args) < 1 {
 		fmt.Println("Error: Database name is required.")
 		os.Exit(1)
@@ -75,8 +71,7 @@ func parseFlags() (user, password, host string, port int, database string) {
 	return *userFlag, *passwordFlag, *hostFlag, *portFlag, args[0]
 }
 
-// Prompt for password securely without displaying input
-func promptForPassword() string {
+func promptForPassword() string {                           // Prompt for password if needed
 	fmt.Print("Enter password: ")
 	bytePassword, err := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println() // Move to a new line after password input
@@ -88,15 +83,14 @@ func promptForPassword() string {
 }
 
 // Connect to the database and return the connection
-func connectToDatabase(user, password, host string, port int, database string) *sql.DB {
+func connectToDatabase(dbType, user, password, host string, port int, database string) *sql.DB {
 	dsn := constructDSN(dbType, user, password, host, port, database)
 	db, err := sql.Open(dbType, dsn)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Verify connection
-	if err := db.Ping(); err != nil {
+	if err := db.Ping(); err != nil {                       // Verify connection
 		log.Fatalf("Cannot connect to database: %v", err)
 	}
 	fmt.Printf("Connected to %s database '%s'!\n", dbType, database)
@@ -104,20 +98,18 @@ func connectToDatabase(user, password, host string, port int, database string) *
 	return db
 }
 
-// Handle SIGINT (^C) and clean up database connection
-func handleSigint(db *sql.DB) {
+func handleSigint(db *sql.DB) {                             // Handle SIGINT (^C)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\nReceived SIGINT, exiting...")
+		fmt.Println("\nExiting due to SIGINT")
 		db.Close()
 		os.Exit(0)
 	}()
 }
 
-// Handle user input loop
-func handleUserInput(db *sql.DB) {
+func handleUserInput(dbType string, db *sql.DB) {           // Handle user input loop
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
@@ -132,11 +124,10 @@ func handleUserInput(db *sql.DB) {
 		query = strings.TrimSpace(query)
 
 		if isExitCommand(query) {
-			fmt.Println("Goodbye!")
 			break
 		}
 
-		if handleMicroCommand(query) {
+		if handleSetCommand(query) {
 			continue
 		}
 
@@ -148,23 +139,20 @@ func handleUserInput(db *sql.DB) {
 		if strings.HasPrefix(strings.ToLower(query), "select") {
 			executeQuery(db, query, rowLimit, executionCount)
 		} else {
-			fmt.Println("Only SELECT statements are allowed. Type 'HELP' for available commands.")
+			fmt.Println("Only SELECT SQL statements are allowed. Type 'HELP' for available commands.")
 		}
 	}
 }
 
-// Execute SELECT queries
 func executeQuery(db *sql.DB, query string, rowLimit, count int) {
-	var totalQueryTime, totalResultTime time.Duration
+	var totalQueryTime, totalResultTime int64
 	var totalRows int
 
-	for i := 0; i < count; i++ {
-		totalStart := time.Now()
+	for iteration := 0; iteration < count; iteration++ {
 
-		// Start query execution timer
-		queryStart := time.Now()
+		queryStart := time.Now().UnixNano()                 // Measure query execution time
 		rows, err := db.Query(query)
-		queryElapsed := time.Since(queryStart)
+		queryElapsed := time.Now().UnixNano() - queryStart  // Query execution time
 
 		if err != nil {
 			fmt.Printf("Query Error: %v\n", err)
@@ -172,131 +160,137 @@ func executeQuery(db *sql.DB, query string, rowLimit, count int) {
 		}
 		defer rows.Close()
 
-		// Get column names
-		columns, err := rows.Columns()
+		columns, err := rows.Columns()                      // Get column names
 		if err != nil {
 			fmt.Printf("Error fetching columns: %v\n", err)
 			return
 		}
 
-		// Prepare result storage
-		columnCount := len(columns)
+		columnCount := len(columns)                         // Prepare result storage
 		values := make([]interface{}, columnCount)
 		valuePtrs := make([]interface{}, columnCount)
 		for j := range values {
 			valuePtrs[j] = &values[j]
 		}
 
-		rowCount := 0
-
-		// Print column headers only on the first execution
-		if i == 0 {
-			fmt.Println(strings.Repeat("-", 50))
+		if iteration == 0 {                                 // Print headers on first execution
+            lineSeparator()
 			fmt.Println(strings.Join(columns, "\t"))
-			fmt.Println(strings.Repeat("-", 50))
+            lineSeparator()
 		}
 
-		// Iterate over rows, limit display to `rowLimit` but process all
-		for rows.Next() {
+		rowCount := 0
+		renderStart := time.Now().UnixNano()                // Start rendering time
+		for rows.Next() {                                   // Iterate over rows 
 			err := rows.Scan(valuePtrs...)
 			if err != nil {
 				fmt.Printf("Row scan error: %v\n", err)
 				return
 			}
 
-			// Convert []byte to string for readable output
-			for j, val := range values {
+			for j, val := range values {                    // Convert []byte for readable display
 				if b, ok := val.([]byte); ok {
 					values[j] = string(b)
 				}
 			}
 
-			// Print actual row data only in the first iteration and up to `rowLimit`
-			if i == 0 && rowCount < rowLimit {
-				for _, val := range values {
-					fmt.Printf("%v\t", val)
-				}
-				fmt.Println()
+			if iteration == 0 {                             // Print row data in first iteration only
+				if rowCount < rowLimit {
+					for _, val := range values {
+				fmt.Printf("%v\t", val)
 			}
+				fmt.Println()
+			} else if rowCount == rowLimit {
+				fmt.Printf("...")
+			}
+		}
 
 			rowCount++
 		}
 
-		// If more than `rowLimit` rows, indicate truncation (only in first iteration)
-		if i == 0 && rowCount > rowLimit {
-			fmt.Printf("[...] Output truncated at %d rows.\n", rowLimit)
+		renderElapsed := time.Now().UnixNano() - renderStart // Measure render time
+
+		if iteration == 0 && rowCount > rowLimit {           // notify truncated to `rowLimit` rows
+			fmt.Printf(" ... Output truncated at %d rows.\n", rowLimit)
 		}
 
-		// Measure total execution time (query + result reading)
-		totalElapsed := time.Since(totalStart)
-
-		// Accumulate times
-		totalQueryTime += queryElapsed
-		totalResultTime += totalElapsed
+		totalQueryTime += queryElapsed                      // Accumulate total times
+		totalResultTime += renderElapsed
 		totalRows = rowCount
 
 		// Show query performance details
-		fmt.Printf("%d rows (%.6f ms query, %.6f ms result)\n",
+		fmt.Printf("%d rows (%.3f ms query, %.3f ms result)\n",
 			rowCount,
-			float64(queryElapsed.Nanoseconds())/1e6,
-			float64(totalElapsed.Nanoseconds())/1e6,
+			float64(queryElapsed)/1e6,                      // Convert nanoseconds to milliseconds
+			float64(renderElapsed)/1e6,                     // Convert nanoseconds to milliseconds
 		)
 	}
 
-	// Print average only if count > 1
-	if count > 1 {
-		fmt.Printf("Average: %d rows (%.6f ms query, %.6f ms result over %d runs)\n",
+	if count > 1 {                                          // Print average only for multiple iterations
+		fmt.Printf("Average: %d rows (%.3f ms query, %.3f ms result, %d executions)\n",
 			totalRows,
-			float64(totalQueryTime.Nanoseconds())/1e6/float64(count),  // Average query execution time
-			float64(totalResultTime.Nanoseconds())/1e6/float64(count), // Average total execution time
+			float64(totalQueryTime)/1e6/float64(count),     // Average query execution time
+			float64(totalResultTime)/1e6/float64(count),    // Average result processing time
 			count,
 		)
 	}
-	fmt.Println(strings.Repeat("-", 50))
+    lineSeparator()
 }
 
-// Default port based on database type
-func defaultPort() int {
-	if dbType == "postgresql" {
-		return 5432
-	}
-	return 3306
+func defaultPortLookup() map[string]int {                   // Define default database ports
+        return map[string]int{
+                "mysql":      3306,
+                "postgresql": 5432,
+                "sqlserver":  1433,
+                "oracle":     1521,
+                "sqlite":     0,
+        }
 }
 
-// Construct DSN for MySQL and PostgreSQL
+func getDefaultPort(dbType string) int {                    // Default port based on database type
+    portLookup := defaultPortLookup()
+    if port, ok := portLookup[dbType]; ok {
+       return port
+    }
+    return 0
+}
+
 func constructDSN(dbType, user, password, host string, port int, database string) string {
-	if dbType == "mysql" {
-		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
+	if dbType == "postgresql" {
+	    return fmt.Sprintf("%s://%s:%s@%s:%d/%s?sslmode=disable", dbType, user, password, host, port, database)
 	}
-	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable", user, password, host, port, database)
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
 }
 
-// Check exit command (case-insensitive, supports multiple ways to exit)
-func isExitCommand(input string) bool {
+func isExitCommand(input string) bool {                     // Check exit commands 
 	lowerInput := strings.ToLower(strings.TrimSpace(input))
-	exitCommands := []string{"exit", "quit", "\\q", ":wq"}
+	exitCommands := []string{"exit", "quit", "\\q", ":wq"}  // Be user friendly easter egg
 
 	for _, cmd := range exitCommands {
 		if lowerInput == cmd {
+			fmt.Println("End of line.")
 			return true
 		}
 	}
 	return false
 }
 
-// Display help
-func displayHelp() {
+func displayHelp() {                                        // Display help
 	fmt.Println("\nAvailable Commands:")
-	fmt.Println(strings.Repeat("-", 50))
-	fmt.Printf("HELP                 - Display this help message\n")
-	fmt.Printf("EXIT                 - Exit the application\n")
-	fmt.Printf("SET MICRO COUNT=N    - Set the execution count for queries (Currently %d)\n", executionCount)
-	fmt.Printf("SET MICRO LIMIT=N    - Set the maximum number of rows displayed (Currently %d)\n", rowLimit)
-	fmt.Printf("SELECT ...           - Execute a SELECT query\n")
-	fmt.Println(strings.Repeat("-", 50))
+    lineSeparator()
+	fmt.Printf("HELP                 - Display this message\n")
+	fmt.Printf("EXIT                 - End of Line\n")
+	fmt.Printf("SET MICRO COUNT=N    - Set number of iterations for queries   (Currently %d)\n", executionCount)
+	fmt.Printf("SET MICRO LIMIT=N    - Set rows displayed for first iteration (Currently %d)\n", rowLimit)
+	fmt.Printf("SELECT ...           - Execute the given SELECT query\n")
+    lineSeparator()
 }
 
-func handleMicroCommand(input string) bool {
+func lineSeparator() {
+	fmt.Println(strings.Repeat("-", LINE))
+}
+
+func handleSetCommand(input string) bool {
 	re := regexp.MustCompile(`\s*=\s*`)
 	input = re.ReplaceAllString(input, " ")
 	words := strings.Fields(strings.ToUpper(input))
@@ -325,7 +319,6 @@ func handleMicroCommand(input string) bool {
 	return true
 }
 
-// Convert string to integer
 func parseInt(s string) (int, error) {
 	var value int
 	_, err := fmt.Sscanf(s, "%d", &value)
