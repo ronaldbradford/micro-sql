@@ -23,6 +23,8 @@ const (
 	LINE = 60
 )
 
+var version = "v0.5.2"
+var build = "local"
 var rowLimit int                                            // TODO: Refactor as local var
 var executionCount int                                      // TODO: Refactor as local var
 
@@ -33,6 +35,7 @@ func main() {
 		password = promptForPassword()
 	}
 
+    fmt.Printf("micro-sql version: %s-%s\n", version, build)
 	db := connectToDatabase(dbType, user, password, host, port, database) // Connect to database
 	defer db.Close()
 

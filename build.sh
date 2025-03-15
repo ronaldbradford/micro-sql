@@ -17,7 +17,8 @@ go mod tidy
 
 # Build the application
 echo "Building the application..."
-go build -o "${BASE_DIR}/bin/${BIN}" "${BASE_DIR}/cmd"
+HASH=$(git log -1 --pretty=%H | cut -c-10)
+go build -ldflags "-X main.build=${HASH}" -o "${BASE_DIR}/bin/${BIN}" "${BASE_DIR}/cmd"
 
 # Create symlinks for MySQL and PostgreSQL modes
 ln -sf ${BIN} "${BASE_DIR}/bin/micro-mysql"
