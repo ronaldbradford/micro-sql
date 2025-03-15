@@ -1,8 +1,13 @@
 # Ignore bin files
-bin/
-micro-mysql
-micro-psql
+bin/micro-mysql
+bin/micro-psql
+bin/micro-psql
+
+releases/
 
 # Ignore temporary files
 *.log
 *.tmp
+
+# Mac Crud
+.DS_Store
