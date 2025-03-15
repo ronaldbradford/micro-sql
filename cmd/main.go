@@ -23,14 +23,12 @@ const (
 	LINE = 60
 )
 
-var version = "v0.5.2"
+var version = "v0.5.3"
 var build = "local"
-var rowLimit int                                            // TODO: Refactor as local var
-var executionCount int                                      // TODO: Refactor as local var
 
 func main() {
     dbType := detectDBType()                                // Determime Database via CLI name
-	user, password, host, port, database := parseFlags(dbType) // Parse command-line flags
+	user, password, host, port, database, options := parseFlags(dbType) // Parse command-line flags
 	if password == "" {                                     // Prompt for password if not provided
 		password = promptForPassword()
 	}
@@ -40,7 +38,7 @@ func main() {
 	defer db.Close()
 
 	handleSigint(db)                                        // Handle SIGINT (^C)
-	handleUserInput(dbType, db)                             // Start the user input loop
+	handleUserInput(dbType, db, options)                    // Start the user input loop
 }
 
 func detectDBType() string {
@@ -59,13 +57,13 @@ func detectDBType() string {
 }
 
 // Parse command-line flags and return values
-func parseFlags(dbType string) (user, password, host string, port int, database string) {
+func parseFlags(dbType string) (user, password, host string, port int, database string, options map[string]int) {
 	userFlag := flag.String("u", "", "Database username")
-	passwordFlag := flag.String("p", "", "Database password (optional, will prompt if not provided)")
+	passwordFlag := flag.String("p", "", "Database password (optional, prompt if not provided)")
 	hostFlag := flag.String("h", "127.0.0.1", "Database host")
 	portFlag := flag.Int("P", getDefaultPort(dbType), "Database port")
-	flag.IntVar(&rowLimit, "l", 10, "Number of rows to display before truncation (default: 10)")
-	flag.IntVar(&executionCount, "c", 3, "Number of times to execute the query (default: 3)")
+	rowLimit := flag.Int("l", 10, "Number of rows to display before truncation (default: 10)")
+	executionCount := flag.Int("c", 3, "Number of times to execute the query (default: 3)")
 	flag.Parse()
 
 	args := flag.Args()                                     // Ensure a database name is provided
@@ -74,7 +72,12 @@ func parseFlags(dbType string) (user, password, host string, port int, database 
 		os.Exit(1)
 	}
 
-	return *userFlag, *passwordFlag, *hostFlag, *portFlag, args[0]
+	options = map[string]int{
+		"rowLimit":      *rowLimit,
+		"executionCount": *executionCount,
+	}
+
+	return *userFlag, *passwordFlag, *hostFlag, *portFlag, args[0], options
 }
 
 func promptForPassword() string {                           // Prompt for password if needed
@@ -115,7 +118,7 @@ func handleSigint(db *sql.DB) {                             // Handle SIGINT (^C
 	}()
 }
 
-func handleUserInput(dbType string, db *sql.DB) {           // Handle user input loop
+func handleUserInput(dbType string, db *sql.DB, options map[string]int) {  // Handle user input loop
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
@@ -134,24 +137,27 @@ func handleUserInput(dbType string, db *sql.DB) {           // Handle user input
 			break
 		}
 
-		if handleSetCommand(query) {
+		if handleSetCommand(query, options) {
 			continue
 		}
 
 		if strings.EqualFold(query, "HELP") {
-			displayHelp()
+			displayHelp(options)
 			continue
 		}
 
 		if strings.HasPrefix(strings.ToLower(query), "select") {
-			executeQuery(db, query, rowLimit, executionCount)
+			executeQuery(db, query, options)
 		} else {
 			fmt.Println("Only SELECT SQL statements are allowed. Type 'HELP' for available commands.")
 		}
 	}
 }
 
-func executeQuery(db *sql.DB, query string, rowLimit, count int) {
+func executeQuery(db *sql.DB, query string, options map[string]int) {
+	rowLimit := options["rowLimit"]
+	count := options["executionCount"]
+
 	var totalQueryTime, totalResultTime int64
 	var totalRows int
 
@@ -269,7 +275,7 @@ func constructDSN(dbType, user, password, host string, port int, database string
 
 func isExitCommand(query string) bool {                     // Check exit commands
 	query = strings.ToLower(query)
-	exitCommands := []string{"exit", "quit", "\\q", ":wq"}  // Be user friendly easter egg
+	exitCommands := []string{"exit", "quit", ".quit", "\\q", ":wq"}  // Be user friendly easter egg
 
 	for _, cmd := range exitCommands {
 		if query == cmd {
@@ -280,13 +286,13 @@ func isExitCommand(query string) bool {                     // Check exit comman
 	return false
 }
 
-func displayHelp() {                                        // Display help
+func displayHelp(options map[string]int) {                  // Display help
 	fmt.Println("\nSQL Commands Available:")
 	lineSeparator()
 	fmt.Printf("HELP                 - Display this message\n")
 	fmt.Printf("EXIT                 - Exit the program\n")
-	fmt.Printf("SET MICRO COUNT=N    - Set number of iterations for queries    (Currently %d)\n", executionCount)
-	fmt.Printf("SET MICRO LIMIT=N    - Set rows to display for first iteration (Currently %d)\n", rowLimit)
+	fmt.Printf("SET MICRO COUNT=N    - Set number of iterations for queries    (Currently %d)\n", options["executionCount"])
+	fmt.Printf("SET MICRO LIMIT=N    - Set rows to display for first iteration (Currently %d)\n", options["rowLimit"])
 	fmt.Printf("SELECT ...           - Execute the given SELECT query\n")
 	lineSeparator()
 }
@@ -295,7 +301,7 @@ func lineSeparator() {
 	fmt.Println(strings.Repeat("-", LINE))
 }
 
-func handleSetCommand(input string) bool {
+func handleSetCommand(input string, options map[string]int) bool {
 	re := regexp.MustCompile(`\s*=\s*`)
 	input = re.ReplaceAllString(input, " ")
 	words := strings.Fields(strings.ToUpper(input))
@@ -312,11 +318,11 @@ func handleSetCommand(input string) bool {
 
 	switch words[2] {
 	case "COUNT":
-		executionCount = value
-		fmt.Printf("Execution count set to %d\n", executionCount)
+		options["executionCount"] = value
+		fmt.Printf("Execution count set to %d\n", value)
 	case "LIMIT":
-		rowLimit = value
-		fmt.Printf("Row limit set to %d\n", rowLimit)
+		options["rowLimit"] = value
+		fmt.Printf("Row limit set to %d\n", value)
 	default:
 		return false
 	}
