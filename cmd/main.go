@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/term"
+	"github.com/chzyer/readline"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -119,13 +119,25 @@ func handleSigint(db *sql.DB) {                             // Handle SIGINT (^C
 }
 
 func handleUserInput(dbType string, db *sql.DB, options map[string]int) {  // Handle user input loop
-	reader := bufio.NewReader(os.Stdin)
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          fmt.Sprintf("micro-%s (%s)> ", dbType, time.Now().Format("15:04:05")),
+		HistoryFile:     "/tmp/micro-sql-history", // Save command history
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		fmt.Println("Error initializing readline:", err)
+		return
+	}
+	defer rl.Close()
+
 
 	for {
-		fmt.Printf("micro-%s (%s)> ", dbType, time.Now().Format("15:04:05"))
-
-		query, err := reader.ReadString('\n')
-		if err != nil {
+		query, err := rl.Readline()
+		if err == readline.ErrInterrupt {
+			fmt.Println("Interrupted, exiting...")
+			break
+		} else if err != nil {
 			fmt.Println("Error reading input:", err)
 			continue
 		}

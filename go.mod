@@ -1,10 +1,9 @@
 module github.com/ronaldbradford/micro-sql
 
-go 1.23.0
-
-toolchain go1.23.7
+go 1.24.1
 
 require (
+	github.com/chzyer/readline v1.5.1
 	github.com/go-sql-driver/mysql v1.9.0
 	github.com/lib/pq v1.10.9
 	golang.org/x/term v0.30.0
