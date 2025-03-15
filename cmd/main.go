@@ -20,14 +20,14 @@ import (
 )
 
 const (
-  LINE = 60
+	LINE = 60
 )
 
 var rowLimit int                                            // TODO: Refactor as local var
 var executionCount int                                      // TODO: Refactor as local var
 
 func main() {
-    var dbType string
+	var dbType string
 
 	progName := strings.ToLower(os.Args[0])
 	switch {
@@ -174,9 +174,9 @@ func executeQuery(db *sql.DB, query string, rowLimit, count int) {
 		}
 
 		if iteration == 0 {                                 // Print headers on first execution
-            lineSeparator()
+			lineSeparator()
 			fmt.Println(strings.Join(columns, "\t"))
-            lineSeparator()
+			lineSeparator()
 		}
 
 		rowCount := 0
@@ -234,25 +234,25 @@ func executeQuery(db *sql.DB, query string, rowLimit, count int) {
 			count,
 		)
 	}
-    lineSeparator()
+	lineSeparator()
 }
 
 func defaultPortLookup() map[string]int {                   // Define default database ports
-        return map[string]int{
-                "mysql":      3306,
-                "postgresql": 5432,
-                "sqlserver":  1433,
-                "oracle":     1521,
-                "sqlite":     0,
-        }
+	return map[string]int{
+		"mysql":      3306,
+		"postgresql": 5432,
+		"sqlserver":  1433,
+		"oracle":     1521,
+		"sqlite":     0,
+	}
 }
 
 func getDefaultPort(dbType string) int {                    // Default port based on database type
-    portLookup := defaultPortLookup()
-    if port, ok := portLookup[dbType]; ok {
-       return port
-    }
-    return 0
+	portLookup := defaultPortLookup()
+	if port, ok := portLookup[dbType]; ok {
+		return port
+	}
+	return 0
 }
 
 func constructDSN(dbType, user, password, host string, port int, database string) string {
@@ -277,13 +277,13 @@ func isExitCommand(input string) bool {                     // Check exit comman
 
 func displayHelp() {                                        // Display help
 	fmt.Println("\nAvailable Commands:")
-    lineSeparator()
+	lineSeparator()
 	fmt.Printf("HELP                 - Display this message\n")
 	fmt.Printf("EXIT                 - End of Line\n")
 	fmt.Printf("SET MICRO COUNT=N    - Set number of iterations for queries   (Currently %d)\n", executionCount)
 	fmt.Printf("SET MICRO LIMIT=N    - Set rows displayed for first iteration (Currently %d)\n", rowLimit)
 	fmt.Printf("SELECT ...           - Execute the given SELECT query\n")
-    lineSeparator()
+	lineSeparator()
 }
 
 func lineSeparator() {
