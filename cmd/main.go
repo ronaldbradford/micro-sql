@@ -158,10 +158,10 @@ func handleUserInput(dbType string, db *sql.DB, options map[string]int) {  // Ha
 			continue
 		}
 
-		if strings.HasPrefix(strings.ToLower(query), "select") {
+		if strings.HasPrefix(strings.ToUpper(query), "SELECT") || strings.HasPrefix(strings.ToUpper(query), "SHOW") {
 			executeQuery(db, query, options)
 		} else {
-			fmt.Println("Only SELECT SQL statements are allowed. Type 'HELP' for available commands.")
+			fmt.Println("Only SELECT and SHOW SQL statements are allowed. Type 'HELP' for available commands.")
 		}
 	}
 }
@@ -286,8 +286,8 @@ func constructDSN(dbType, user, password, host string, port int, database string
 }
 
 func isExitCommand(query string) bool {                     // Check exit commands
-	query = strings.ToLower(query)
-	exitCommands := []string{"exit", "quit", ".quit", "\\q", ":wq"}  // Be user friendly easter egg
+	query = strings.ToUpper(query)
+	exitCommands := []string{"EXIT", "QUIT", ".QUIT", "\\Q", ":WQ"}  // Be user friendly easter egg
 
 	for _, cmd := range exitCommands {
 		if query == cmd {
@@ -306,6 +306,7 @@ func displayHelp(options map[string]int) {                  // Display help
 	fmt.Printf("SET MICRO COUNT=N    - Set number of iterations for queries    (Currently %d)\n", options["executionCount"])
 	fmt.Printf("SET MICRO LIMIT=N    - Set rows to display for first iteration (Currently %d)\n", options["rowLimit"])
 	fmt.Printf("SELECT ...           - Execute the given SELECT query\n")
+	fmt.Printf("SHOW ...             - Execute the given SHOW statement\n")
 	lineSeparator()
 }
 
