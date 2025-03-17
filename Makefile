@@ -14,7 +14,7 @@ AUTHOR := ronaldbradford
 LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.build=$(HASH)'
 
 # Targets
-.PHONY: hash build build-docker setup clean
+.PHONY: hash build build-docker setup test clean
 
 hash:
 	@echo "Generating .hash file..."
@@ -37,6 +37,11 @@ build: setup
 
 build-docker:
 	docker build --tag $(AUTHOR)/$(OUTPUT):latest --tag $(AUTHOR)/$(OUTPUT):$(VERSION) .
+
+test:
+	@echo "Running tests in cmd/..."
+	go clean -testcache
+	@go test -v ./cmd/...
 
 clean:
 	@echo "Cleaning build artifacts..."

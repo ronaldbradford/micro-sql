@@ -319,7 +319,7 @@ func isExitCommand(query string) bool {                     // Check exit comman
 
 	for _, cmd := range exitCommands {
 		if query == cmd {
-			fmt.Println("End of line.")
+			fmt.Println("End of Line")
 			return true
 		}
 	}
