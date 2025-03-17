@@ -1,7 +1,5 @@
 # Ignore bin files
-bin/micro-mysql
-bin/micro-psql
-bin/micro-psql
+bin/
 
 # Release files
 .hash
