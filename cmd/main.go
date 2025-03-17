@@ -294,13 +294,15 @@ func getVersionSQL(dbType string) string {
     if dbType == "oracle" {
         return "SELECT banner FROM v$version"
     } else if dbType == "sqlserver" {
-        return "select @@VERSION;"
+        return "SELECT @@VERSION;"
     } else if dbType == "snowflake" {
-        return "select CURRENT_VERSION();"
+        return "SELECT CURRENT_VERSION();"
     } else if dbType == "sqlite" {
-        return "select SQLITE_VERSION();"
+        return "SELECT SQLITE_VERSION();"
+    } else if dbType == "postgres" {
+        return "SELECT CURRENT_SETTING('server_version');"
     }
-    // MySQL, MariaDB, PostgreSQL, DuckDB, TiDB, Hive
+    // MySQL, MariaDB
     return "SELECT VERSION()"
 }
 
