@@ -23,7 +23,7 @@ const (
 	LINE = 60
 )
 
-var version = "v0.5.3"
+var version = "0.5.4"
 var build = "local"
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 		password = promptForPassword()
 	}
 
-    fmt.Printf("micro-sql version: %s-%s\n", version, build)
+    fmt.Printf("micro-sql version: v%s-%s\n", version, build)
 	db := connectToDatabase(dbType, user, password, host, port, database) // Connect to database
 	defer db.Close()
 
@@ -46,7 +46,7 @@ func detectDBType() string {
 
     switch {
     case strings.HasSuffix(progName, "psql"):
-        return "postgresql"
+        return "postgres"
     case strings.HasSuffix(progName, "mysql"):
         return "mysql"
     default:
@@ -94,7 +94,9 @@ func promptForPassword() string {                           // Prompt for passwo
 // Connect to the database and return the connection
 func connectToDatabase(dbType, user, password, host string, port int, database string) *sql.DB {
 	dsn := constructDSN(dbType, user, password, host, port, database)
+	connectStart := time.Now().UnixNano()                   // Measure connect time
 	db, err := sql.Open(dbType, dsn)
+	connectElapsed := time.Now().UnixNano() - connectStart  // Query execution time
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -102,7 +104,17 @@ func connectToDatabase(dbType, user, password, host string, port int, database s
 	if err := db.Ping(); err != nil {                       // Verify connection
 		log.Fatalf("Cannot connect to database: %v", err)
 	}
-	fmt.Printf("Connected to %s database '%s'!\n", dbType, database)
+
+	var version string
+	if err = db.QueryRow(getVersionSQL(dbType)).Scan(&version); err != nil {
+		log.Fatalf("Cannot get database version: %v", err)
+	}
+
+	fmt.Printf("Connected to %s version %s database '%s' (%.3f ms connect)\n",
+				dbType,
+				version,
+				database,
+				float64(connectElapsed)/1e6)
 
 	return db
 }
@@ -263,7 +275,7 @@ func executeQuery(db *sql.DB, query string, options map[string]int) {
 func defaultPortLookup() map[string]int {                   // Define default database ports
 	return map[string]int{
 		"mysql":      3306,
-		"postgresql": 5432,
+		"postgres":   5432,
 		"sqlserver":  1433,
 		"oracle":     1521,
 		"sqlite":     0,
@@ -278,8 +290,22 @@ func getDefaultPort(dbType string) int {                    // Default port base
 	return 0
 }
 
+func getVersionSQL(dbType string) string {
+    if dbType == "oracle" {
+        return "SELECT banner FROM v$version"
+    } else if dbType == "sqlserver" {
+        return "select @@VERSION;"
+    } else if dbType == "snowflake" {
+        return "select CURRENT_VERSION();"
+    } else if dbType == "sqlite" {
+        return "select SQLITE_VERSION();"
+    }
+    // MySQL, MariaDB, PostgreSQL, DuckDB, TiDB, Hive
+    return "SELECT VERSION()"
+}
+
 func constructDSN(dbType, user, password, host string, port int, database string) string {
-	if dbType == "postgresql" {
+	if dbType == "postgres" {
 	    return fmt.Sprintf("%s://%s:%s@%s:%d/%s?sslmode=disable", dbType, user, password, host, port, database)
 	}
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
