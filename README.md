@@ -18,11 +18,11 @@ This has a few simple features to assist with instrumenting:
 * Same interface to run SQL statements in MySQL or PostgreSQL.
 * Execute the same query 'N' times built-in, providing average execution times across 'N' iterations.
 * Separate the actual query execution and the resultset processing times.
-* Limit resuls output to focus on the performance numbers, not the data display. Limited content is shown to prove results are produced from the queries.
+* Limit results output to focus on the performance numbers, not the data display. Limited content is shown to prove results are produced from the queries.
 
 ### Example Using Readyset Caching
 
-Here is a simple example running the query cached in Readyset executing in <1ms.
+Here is a simple example running the query cached in Readyset executing in <1ms, close to 0.5ms.
 
 ```
 $ bin/micro-mysql -u readyset -p *** -h db -P 3342 imdb
@@ -66,6 +66,8 @@ Average: 1 rows (617.380 ms query, 0.019 ms result, 4 executions)
 ### Output with larger Resultsets
 
 **micro-sql** is not designed for query output. A limited display is provided for verification. It does process all the query results in a single thread to give an indication of a total time for an application.
+
+In this example, the resultset has 14M rows. While the query is executed in ~1ms, the full resultset takes another 7000+ms (i.e. 7 seconds) for the client to receive the data. If your application then wanted to render some of this, that would take longer.
 
 
 ```
