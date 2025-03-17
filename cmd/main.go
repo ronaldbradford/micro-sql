@@ -23,7 +23,7 @@ const (
 	LINE = 60
 )
 
-var version = "0.5.4"
+var version = "dev"
 var build = "local"
 
 func main() {
