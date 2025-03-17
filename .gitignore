@@ -3,6 +3,8 @@ bin/micro-mysql
 bin/micro-psql
 bin/micro-psql
 
+# Release files
+.hash
 releases/
 
 # Ignore temporary files

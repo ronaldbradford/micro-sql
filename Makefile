@@ -4,15 +4,21 @@
 # Required Variables
 VERSION := $(shell cat .version)
 GOOS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
-GOARCH ?= $(shell uname -m)
-HASH := $(shell git log -1 --pretty=%h)
+#GOARCH ?= $(shell uname -m) # Does not work in Docker Alpine
+GOARCH ?= arm64
+HASH := $(shell cat .hash 2>/dev/null || echo "unknown")
 OUTPUT := micro-sql
+AUTHOR := ronaldbradford
 
 # Dynamic Build Flags
 LDFLAGS := -X 'main.version=$(VERSION)' -X 'main.build=$(HASH)'
 
 # Targets
-.PHONY: build setup clean
+.PHONY: hash build build-docker setup clean
+
+hash:
+	@echo "Generating .hash file..."
+	@git log -1 --pretty=%h > .hash
 
 setup:
 	@if [ ! -f "go.mod" ]; then \
@@ -29,6 +35,10 @@ build: setup
 	ln -sf $(OUTPUT) bin/micro-mysql
 	ln -sf $(OUTPUT) bin/micro-psql
 
+build-docker:
+	docker build --tag $(AUTHOR)/$(OUTPUT):latest --tag $(AUTHOR)/$(OUTPUT):$(VERSION) .
+
 clean:
 	@echo "Cleaning build artifacts..."
+	#go clean -cache -modcache
 	rm -rf bin/
